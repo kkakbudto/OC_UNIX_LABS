@@ -15,7 +15,6 @@ case "$INPUT_FILE" in
     *) ABS_INPUT_FILE="$ORIG_DIR/$INPUT_FILE" ;;
 esac
 FILENAME=$(basename "$ABS_INPUT_FILE")
-TARGET_DIR=$(dirname "$ABS_INPUT_FILE")
 
 OUTPUT_FILE=$(sed -n 's/.*Output:[ \t]*\([^ \t]*\).*/\1/p' "$ABS_INPUT_FILE" | head -n 1)
 if [ -z "$OUTPUT_FILE" ]; then
@@ -37,7 +36,7 @@ case "$FILENAME" in
         cc -Wall -Wextra -O2 "$ABS_INPUT_FILE" -o "$OUTPUT_FILE"
         rc=$?
         if [ "$rc" -eq 0 ]; then
-            cp "$OUTPUT_FILE" "$TARGET_DIR/" || rc=$?
+            cp "$OUTPUT_FILE" "$ORIG_DIR/" || rc=$?
         fi
         ;;
     *.cpp|*.cc|*.cxx)
@@ -45,7 +44,7 @@ case "$FILENAME" in
         c++ -Wall -Wextra -O2 "$ABS_INPUT_FILE" -o "$OUTPUT_FILE"
         rc=$?
         if [ "$rc" -eq 0 ]; then
-            cp "$OUTPUT_FILE" "$TARGET_DIR/" || rc=$?
+            cp "$OUTPUT_FILE" "$ORIG_DIR/" || rc=$?
         fi
         ;;
     *.tex)
@@ -53,7 +52,7 @@ case "$FILENAME" in
         pdflatex -interaction=nonstopmode -jobname="$OUTPUT_FILE" "$ABS_INPUT_FILE"
         rc=$?
         if [ "$rc" -eq 0 ]; then
-            cp "$OUTPUT_FILE.pdf" "$TARGET_DIR/" || rc=$?
+            cp "$OUTPUT_FILE.pdf" "$ORIG_DIR/" || rc=$?
         fi
         ;;
     *)
