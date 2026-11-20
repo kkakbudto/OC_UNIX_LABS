@@ -15,6 +15,14 @@ stop_containers() {
     else
         echo "Запущенных контейнеров $PREFIX не найдено."
     fi
+
+    # Безопасная уборка служебного .lock после остановки всех контейнеров
+    if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1 \
+        && docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+        docker run --rm --entrypoint /bin/rm \
+            -v "${VOLUME_NAME}:/data" \
+            "$IMAGE_NAME" -f /data/.lock >/dev/null 2>&1 || true
+    fi
 }
 
 case "${1:-}" in
@@ -31,7 +39,7 @@ case "${1:-}" in
     ""|*[!0-9]*)
         echo "Использование:"
         echo "  $0 <количество>   — собрать образ, создать том и запустить N контейнеров (например, 1, 10 или 50)"
-        echo "  $0 stop           — остановить и удалить все контейнеры"
+        echo "  $0 stop           — остановить и удалить все контейнеры (и очистить .lock в томе)"
         echo "  $0 clean          — остановить контейнеры и удалить разделяемый том"
         exit 1
         ;;

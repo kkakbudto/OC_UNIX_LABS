@@ -22,49 +22,81 @@ if [ -z "$CONTAINER_ID" ]; then
     exit 2
 fi
 
+if command -v flock >/dev/null 2>&1; then
+    LOCK_MODE="flock"
+else
+    LOCK_MODE="noclobber"
+    echo "[$CONTAINER_ID] ПРЕДУПРЕЖДЕНИЕ: утилита flock не найдена, используется резервный режим атомарного создания через set -C (noclobber)" >&2
+fi
+
 CURRENT_FILE=""
 
 cleanup() {
     if [ -n "$CURRENT_FILE" ]; then
         rm -f "$CURRENT_FILE"
     fi
+    # Файл .lock не удаляется отдельным контейнером при выходе:
+    # удаление inode активного lock-файла нарушило бы блокировку flock
+    # для остальных работающих контейнеров. Очистка .lock выполняется
+    # централизованно после остановки всех экземпляров (run_lab2.sh stop).
     exit 0
 }
 
 trap cleanup INT TERM HUP QUIT
 
-echo "Контейнер запущен. ID: $CONTAINER_ID, каталог тома: $SHARED_DIR"
+format_file_name() {
+    if [ "$1" -lt 10 ]; then
+        FILE_NAME="00$1"
+    elif [ "$1" -lt 100 ]; then
+        FILE_NAME="0$1"
+    else
+        FILE_NAME="$1"
+    fi
+}
+
+echo "Контейнер запущен. ID: $CONTAINER_ID, каталог тома: $SHARED_DIR, режим синхронизации: $LOCK_MODE"
 
 SEQ_NUM=0
 
 while :; do
-    {
-        if ! flock -x 9; then
-            echo "[$CONTAINER_ID] ОШИБКА: Не удалось захватить блокировку $LOCK_FILE" >&2
-            sleep 1
-            continue
-        fi
-
-        i=1
-        while :; do
-            if [ "$i" -lt 10 ]; then
-                FILE_NAME="00$i"
-            elif [ "$i" -lt 100 ]; then
-                FILE_NAME="0$i"
-            else
-                FILE_NAME="$i"
+    if [ "$LOCK_MODE" = "flock" ]; then
+        {
+            if ! flock -x 9; then
+                echo "[$CONTAINER_ID] ОШИБКА: Не удалось захватить блокировку $LOCK_FILE" >&2
+                sleep 1
+                continue
             fi
 
+            i=1
+            while :; do
+                format_file_name "$i"
+                FILE_PATH="$SHARED_DIR/$FILE_NAME"
+                if [ ! -e "$FILE_PATH" ]; then
+                    SEQ_NUM=$((SEQ_NUM + 1))
+                    CURRENT_FILE="$FILE_PATH"
+                    printf '%s %d\n' "$CONTAINER_ID" "$SEQ_NUM" > "$FILE_PATH"
+                    break
+                fi
+                i=$((i + 1))
+            done
+        } 9>>"$LOCK_FILE"
+    else
+        # Резервный POSIX-вариант для систем без flock (BSD, macOS, NFS):
+        # set -C (noclobber) использует O_CREAT | O_EXCL на уровне ядра,
+        # гарантируя атомарную проверку отсутствия и создание файла.
+        NEXT_SEQ=$((SEQ_NUM + 1))
+        i=1
+        while :; do
+            format_file_name "$i"
             FILE_PATH="$SHARED_DIR/$FILE_NAME"
-            if [ ! -e "$FILE_PATH" ]; then
-                SEQ_NUM=$((SEQ_NUM + 1))
-                printf '%s %d\n' "$CONTAINER_ID" "$SEQ_NUM" > "$FILE_PATH"
+            if (set -C; printf '%s %d\n' "$CONTAINER_ID" "$NEXT_SEQ" > "$FILE_PATH") 2>/dev/null; then
+                SEQ_NUM="$NEXT_SEQ"
                 CURRENT_FILE="$FILE_PATH"
                 break
             fi
             i=$((i + 1))
         done
-    } 9>>"$LOCK_FILE"
+    fi
 
     echo "[$CONTAINER_ID] Создан файл $FILE_NAME (порядковый номер: $SEQ_NUM)"
 
