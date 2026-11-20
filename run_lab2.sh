@@ -16,7 +16,6 @@ stop_containers() {
         echo "Запущенных контейнеров $PREFIX не найдено."
     fi
 
-    # Безопасная уборка служебного .lock после остановки всех контейнеров
     if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1 \
         && docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
         docker run --rm --entrypoint /bin/rm \
